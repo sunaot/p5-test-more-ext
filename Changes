@@ -1,0 +1,6 @@
+Revision history for Perl extension Test::More::Ext.
+
+0.01  Wed Apr 10 18:07:57 2013
+	- original version; created by h2xs 1.23 with options
+		-AX --skip-exporter -n Test::More::Ext
+
