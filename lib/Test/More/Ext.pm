@@ -41,8 +41,8 @@ sub testcase(&) {
             # $Level first to limit the scope of the reset to the subtest.
             local $Test::Builder::Level = $Test::Builder::Level + 1;
 
-            $child  = $self->child($name);
             %parent = %$self;
+            $child  = $self->child($name);
             %$self  = %$child;
 
             my $run_the_subtests = sub {
@@ -107,6 +107,7 @@ sub testcase(&) {
         local *Test::Builder::child = $ext_child;
         local *Test::Builder::context = $context;
         local *Test::More::subtest = $safe_more_subtest;
+        local *main::subtest = *Test::More::subtest{CODE};
         $block->();
     }
 }
