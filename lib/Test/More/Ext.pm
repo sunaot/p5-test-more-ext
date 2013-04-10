@@ -7,31 +7,34 @@ use warnings;
 our $VERSION = '0.01';
 
 use parent qw(Exporter);
-our @EXPORT = qw(testcase);
+our @EXPORT = qw(testcase context);
 
 use Test::More;
-use List::MoreUtils qw(any);
 
 # based on Test::Builder VERSION 0.98
 sub testcase(&) {
-    my $proc = shift;
+    my $block = shift;
     my $subtest = *Test::Builder::subtest{CODE};
+    my $child = *Test::Builder::child{CODE};
     my $more_subtest = *Test::More::subtest{CODE};
 
-    my $safe_more_subtest = sub($&@) {
+    my $safe_more_subtest = sub($&) {
         eval { $more_subtest->(@_) };
     };
+    my $ext_child = sub {
+        my ($self, $name) = @_;
+        my $c = $child->(@_);
+        $c->{Setup} = $self->{Setup};
+        $c->{Teardown} = $self->{Teardown};
+        return $c;
+    };
     my $safetest = sub {
-        my ($self, $name, $subtests, %args) = @_;
+        my ($self, $name, $subtests) = @_;
 
         if ('CODE' ne ref $subtests) {
             $self->croak("subtest()'s second argument must be a code ref");
         }
-        my $setup = delete local $args{setup} || sub {};
-        my $teardown = delete local $args{teardown} || sub {};
 
-        # Turn the child into the parent so anyone who has stored a copy of
-        # the Test::Builder singleton will get the child.
         my($error, $child, %parent);
         {
             # child() calls reset() which sets $Level to 1, so we localize
@@ -46,9 +49,11 @@ sub testcase(&) {
                 my @errors;
                 my $params;
                 eval {
-                    $params = $setup->();
+                    foreach my $setup (@{ $self->{Setup} }) {
+                        $params = $setup->($params);
+                    }
                     1;
-                } or push @errors, $@;
+                } or push @errors, $@; # continue to ensure teardown when error
                 if (!$@) {
                     eval {
                         $subtests->($params);
@@ -56,7 +61,9 @@ sub testcase(&) {
                     } or push @errors, $@;
                 }
                 eval {
-                    $teardown->($params);
+                    foreach my $teardown (@{ $self->{Teardown} }) {
+                        $teardown->($params);
+                    }
                     1;
                 } or push @errors, $@;
                 die shift @errors if @errors;
@@ -82,12 +89,38 @@ sub testcase(&) {
         local $Test::Builder::Level = $Test::Builder::Level + 1;
         return $child->finalize;
     };
+    my $context = sub {
+        my ($self, $name, $scope, %args) = @_;
+
+        my $setup = delete local $args{setup} || sub {};
+        my $teardown = delete local $args{teardown} || sub {};
+        $self->{Setup} ||= ();
+        $self->{Teardown} ||= ();
+        push @{ $self->{Setup} }, $setup;
+        unshift @{ $self->{Teardown} }, $teardown;
+
+        $subtest->($self, $name, $scope);
+    };
     {
         no warnings 'redefine';
         local *Test::Builder::subtest = $safetest;
+        local *Test::Builder::child = $ext_child;
+        local *Test::Builder::context = $context;
         local *Test::More::subtest = $safe_more_subtest;
-        $proc->();
+        $block->();
     }
+}
+
+sub context($&@) {
+    my ($name, $context) = @_;
+
+    my $tb = Test::More->builder;
+    return eval { $tb->context(@_) };
+}
+
+{
+    package Test::Builder;
+    sub context {}
 }
 
 1;
