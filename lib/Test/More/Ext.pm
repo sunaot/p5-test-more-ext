@@ -130,37 +130,52 @@ __END__
 
 =head1 NAME
 
-Test::Ext - Perl extension for blah blah blah
+Test::More::Ext - enable nested setup/teardown to Test::More::subtest
 
 =head1 SYNOPSIS
 
-  use Test::Ext;
+  use Test::More;
+  use Test::More::Ext;
   
   testcase {
-      subtest 'what you need' => sub {
-          ok(1);
+      subtest 'test should pass' => sub {
+          pass;
       };
 
-      sub setup {
-          # setup is called before each subtests like xUnit.
-      }
+      context(
+          'when login' => sub {
+              subtest 'should be logged in' => sub {
+                  my $params = shift;
+                  is $params->{login}, 1;
+              };
 
-      sub teardown {
-          # teardown is called after each subtests.
-      }
+              # setup/teardown is called for every subtest
+              subtest 'should be ...' => sub {
+                  my $params = shift;
+                  ...
+              };
+          },
+          setup => sub {
+              return {login => 1};
+          },
+          teardown => sub {
+              my $params = shift;
+              delete $params->{login};
+          },
+      );
   };
 
   done_testing;
 
 =head1 DESCRIPTION
 
-Test::Ext is Test::More extension and can be used with bare subtest.
+Test::More::Ext is Test::More extension and can be used with bare subtest.
 
 This module only affect during the testcase { } block, so bare 
 subtest function can be used outside of the testcase { } block.
 
-Using Test::Ext, your subtests are never stopped with uncatched die()
-in subtest closure.
+Using Test::More::Ext, subtest can continue to run after an uncatched die()
+error in subtest closures.
 
 =head1 SEE ALSO
 
