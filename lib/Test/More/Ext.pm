@@ -18,9 +18,6 @@ sub testcase(&) {
     my $child = *Test::Builder::child{CODE};
     my $more_subtest = *Test::More::subtest{CODE};
 
-    my $safe_more_subtest = sub($&) {
-        eval { $more_subtest->(@_) };
-    };
     my $ext_child = sub {
         my ($self, $name) = @_;
         my $c = $child->(@_);
@@ -31,63 +28,38 @@ sub testcase(&) {
     my $safetest = sub {
         my ($self, $name, $subtests) = @_;
 
-        if ('CODE' ne ref $subtests) {
-            $self->croak("subtest()'s second argument must be a code ref");
-        }
-
-        my($error, $child, %parent);
-        {
-            # child() calls reset() which sets $Level to 1, so we localize
-            # $Level first to limit the scope of the reset to the subtest.
-            local $Test::Builder::Level = $Test::Builder::Level + 1;
-
-            %parent = %$self;
-            $child  = $self->child($name);
-            %$self  = %$child;
-
-            my $run_the_subtests = sub {
-                my @errors;
-                my $params;
-                eval {
-                    foreach my $setup (@{ $self->{Setup} }) {
-                        $params = $setup->($params);
-                    }
-                    1;
-                } or push @errors, $@; # continue to ensure teardown when error
-                if (!$@) {
-                    eval {
-                        $subtests->($params);
-                        1;
-                    } or push @errors, $@;
+        my $wrap = sub {
+            my @errors;
+            my $params;
+            eval {
+                foreach my $setup (@{ $self->{Setup} }) {
+                    $params = $setup->($params);
                 }
+                1;
+            } or push @errors, $@; # continue to ensure teardown when error
+            if (!$@) {
                 eval {
-                    foreach my $teardown (@{ $self->{Teardown} }) {
-                        $teardown->($params);
-                    }
+                    $subtests->($params);
                     1;
                 } or push @errors, $@;
-                die shift @errors if @errors;
-                $self->done_testing unless $self->_plan_handled;
-                1;
-            };
-
-            if( !eval { $run_the_subtests->() } ) {
-                $error = $@;
             }
-        }
+            eval {
+                foreach my $teardown (@{ $self->{Teardown} }) {
+                    $teardown->($params);
+                }
+                1;
+            } or push @errors, $@;
+            die shift @errors if @errors;
+        };
 
-        # Restore the parent and the copied child.
-        %$child = %$self;
-        %$self = %parent;
-
-        # Restore the parent's $TODO
-        $self->find_TODO(undef, 1, $child->{Parent_TODO});
-
-        # Die *after* we restore the parent.
-        die $error if $error and !eval { $error->isa('Test::Builder::Exception') };
-
-        local $Test::Builder::Level = $Test::Builder::Level + 1;
-        return $child->finalize;
+        eval {
+            $subtest->($self, $name, $wrap);
+            1;
+        } or do {
+            # continue to run subtests when catch error
+            warn $@;
+            delete $self->{Child_Name};
+        };
     };
     my $context = sub {
         my ($self, $name, $scope, %args) = @_;
@@ -106,8 +78,6 @@ sub testcase(&) {
         local *Test::Builder::subtest = $safetest;
         local *Test::Builder::child = $ext_child;
         local *Test::Builder::context = $context;
-        local *Test::More::subtest = $safe_more_subtest;
-        local *main::subtest = *Test::More::subtest{CODE};
         $block->();
     }
 }
