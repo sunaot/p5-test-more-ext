@@ -27,6 +27,11 @@ This module requires these other modules and libraries:
 
   * Test::More
 
+DISCLAIMER
+
+This module *cannot* use with Test::Flatten and would have trouble
+to use with any other modules redefine Test::Builder::subtest.
+
 COPYRIGHT AND LICENCE
 
 Put the correct copyright and licence information here.
